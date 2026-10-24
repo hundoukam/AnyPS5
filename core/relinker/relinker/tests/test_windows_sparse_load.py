@@ -10,7 +10,8 @@ import tempfile
 from test_linux_load_alignment import PT_LOAD, fixture
 from test_windows_bss import LOAD_RVA, SECTION_ALIGNMENT, sections
 
-FAR_ADDRESS = 0x7FE00000
+FAR_ADDRESS = 0x76000000
+LARGEST_IMAGE_SIZE = 0x77000000
 RUNNABLE_FAR_ADDRESS = 0x4000000
 ENTRY = 0x10
 PEAK_MEMORY_LIMIT = 512 << 20
@@ -54,7 +55,22 @@ def main():
         assert raw_size == 0 and raw == 0 and rva + virtual_size <= LOAD_RVA + FAR_ADDRESS, gap
         far = next(section for section in table if section[2] == LOAD_RVA + FAR_ADDRESS)
         assert far[1] == 0x1000, far
+        largest = work / "largest.elf"
+        largest.write_bytes(sparse_fixture(FAR_ADDRESS + LARGEST_IMAGE_SIZE - image_size))
+        largest_output = work / "largest.exe"
+        result = subprocess.run([str(relinker), "--skip-sce-module", "--windows", str(largest), str(largest_output)],
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert sections(largest_output.read_bytes())[1] == LARGEST_IMAGE_SIZE
+        oversized = work / "oversized.elf"
+        oversized.write_bytes(sparse_fixture(FAR_ADDRESS + LARGEST_IMAGE_SIZE - image_size + 0x1000))
+        oversized_output = work / "oversized.exe"
+        result = subprocess.run([str(relinker), "--skip-sce-module", "--windows", str(oversized), str(oversized_output)],
+                                capture_output=True, text=True, timeout=20)
+        assert result.returncode == 2 and "largest image size" in result.stderr and not oversized_output.exists(), (result.returncode, result.stdout, result.stderr)
         if os.name == "nt":
+            executed = subprocess.run([str(largest_output)], capture_output=True, text=True, timeout=20)
+            assert executed.returncode == 42, f"largest image exit code {executed.returncode:#x}"
             runnable = work / "runnable.elf"
             runnable.write_bytes(sparse_fixture(RUNNABLE_FAR_ADDRESS))
             runnable_output = work / "runnable.exe"

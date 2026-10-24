@@ -72,7 +72,9 @@ std::vector<std::uint8_t> WindowsPeWriter::Write(const std::vector<PeSection>& s
     }
     if (!foundEntry)
         throw Domain::RelinkerException("PE entry point is not inside executable section data", entryRva);
-    if (fixedImageBase && *fixedImageBase > 0x7fffffffffff - static_cast<std::uint64_t>(endRva))
+    if (endRva > LargestImageSize)
+        throw Domain::RelinkerException("PE image exceeds the largest image size Windows maps", endRva);
+    if (fixedImageBase && *fixedImageBase > HighestUserAddress - endRva)
         throw Domain::RelinkerException("Fixed Windows image exceeds the user address space");
     Io::WriteU32(result, optionalOffset + 4, codeSize);
     Io::WriteU32(result, optionalOffset + 8, dataSize);

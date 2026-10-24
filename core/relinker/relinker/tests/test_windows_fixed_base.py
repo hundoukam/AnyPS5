@@ -142,6 +142,18 @@ def main():
         source.write_bytes(image)
         result = subprocess.run([str(relinker), "--windows", "--skip-sce-module", "--windows-fixed-base", "0x7fffffff0000", str(source), str(output)], capture_output=True, text=True, timeout=5)
         assert result.returncode == 2 and "user address space" in result.stderr and not output.exists(), result
+
+        data = default.read_bytes()
+        _, optional = pe_headers(data)
+        size = struct.unpack_from("<I", data, optional + 56)[0]
+        highest = (0x7fffffff0000 + 0x10000 - size) & ~0xffff
+        for _ in range(3):
+            run(convert("highest-fitting-base", fixture(), highest))
+        source = work / "top-gap.elf"
+        output = work / "top-gap.exe"
+        source.write_bytes(fixture())
+        result = subprocess.run([str(relinker), "--windows", "--skip-sce-module", "--windows-fixed-base", hex(highest + 0x10000), str(source), str(output)], capture_output=True, text=True, timeout=5)
+        assert result.returncode == 2 and "user address space" in result.stderr and not output.exists(), result
     print("Windows fixed base: default, absolute GOT, 64-bit base, TLS, guest/native/lazy imports, collision and bounds passed")
 
 
